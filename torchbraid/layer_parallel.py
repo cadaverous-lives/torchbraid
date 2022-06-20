@@ -91,7 +91,7 @@ class LayerParallel(nn.Module):
       if self.my_rank==0:
         return op(*args,**kwargs)
 
-      # this helps with makign constructos consistent
+      # this helps with making constructors consistent
       if inspect.isclass(op):
         return None
 
@@ -190,7 +190,7 @@ class LayerParallel(nn.Module):
     return [data]
 
   def comp_op(self):
-    """Short for compose operator, returns a functor that allows contstruction of composite neural 
+    """Short for compose operator, returns a functor that allows construction of composite neural 
        networks using this LayerParallel module.
     """
     return self.exec_helper
@@ -268,6 +268,10 @@ class LayerParallel(nn.Module):
 
   def setBwdFinalFCRelax(self):
     self.bwd_app.finalRelax()
+
+  def setRelaxOnlyCG(self, flag):
+    self.bwd_app.setRelaxOnlyCG(flag)
+    self.fwd_app.setRelaxOnlyCG(flag)
 
   def setBwdRelaxOnlyCG(self, flag):
     self.bwd_app.setRelaxOnlyCG(flag)

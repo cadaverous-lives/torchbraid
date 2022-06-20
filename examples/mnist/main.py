@@ -124,7 +124,7 @@ class SerialNet(nn.Module):
     if serial_nn is None:
       step_layer = lambda: StepLayer(channels)
       numprocs = 1
-      parallel_nn = torchbraid.LayerParallel(MPI.COMM_SELF,step_layer,numprocs*local_steps,Tf,max_levels=1,max_iters=1)
+      parallel_nn = torchbraid.LayerParallel(MPI.COMM_SELF,step_layer,numprocs*local_steps,Tf,max_fwd_levels=1,max_bwd_levels=1,max_iters=1)
       parallel_nn.setPrintLevel(0)
     
       self.serial_nn   = parallel_nn.buildSequentialOnRoot()
@@ -151,7 +151,7 @@ class ParallelNet(nn.Module):
 
     numprocs = MPI.COMM_WORLD.Get_size()
 
-    self.parallel_nn = torchbraid.LayerParallel(MPI.COMM_WORLD,step_layer,local_steps*numprocs,Tf,max_levels=max_levels,max_iters=max_iters)
+    self.parallel_nn = torchbraid.LayerParallel(MPI.COMM_WORLD,step_layer,local_steps*numprocs,Tf,max_fwd_levels=max_levels,max_bwd_levels=max_levels,max_iters=max_iters)
     if fwd_max_iters>0:
       print('fwd_amx_iters',fwd_max_iters)
       self.parallel_nn.setFwdMaxIters(fwd_max_iters)
@@ -378,11 +378,11 @@ def main():
     transform = transforms.Compose([transforms.ToTensor(),
                                     transforms.Normalize((0.1307,), (0.3081,))
                                    ])
-    dataset = datasets.MNIST('./data', download=False,transform=transform)
+    dataset = datasets.MNIST('./data', download=True,transform=transform)
   else:
     root_print(rank,'-- Using Fashion MNIST')
     transform = transforms.Compose([transforms.ToTensor()])
-    dataset = datasets.FashionMNIST('./fashion-data', download=False,transform=transform)
+    dataset = datasets.FashionMNIST('./fashion-data', download=True,transform=transform)
   # if args.digits
 
   root_print(rank,'-- procs    = {}\n'

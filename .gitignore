@@ -6,6 +6,10 @@ braid.out.cycle
 __pycache__/
 examples/mnist/data/
 examples/mnist/fashion-data/
+examples/mnist_sp_coarsen/data/
+examples/mnist_sp_coarsen/fashion-data/
+examples/mnist_sp_coarsen/experiments
+examples/mnist_sp_coarsen/models
 
 makefile.inc
 
