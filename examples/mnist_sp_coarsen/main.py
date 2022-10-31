@@ -51,16 +51,17 @@ import torch.nn.functional as F
 import torch.optim as optim
 import statistics as stats
 from math import pi
+import json
 
 import numpy as np
 import matplotlib.pyplot as pyplot
 
 from torchvision import datasets, transforms
+from functools import partial
 
 from timeit import default_timer as timer
 
 from mpi4py import MPI
-
 
 
 def root_print(rank, s):
@@ -115,6 +116,68 @@ def my_restrict(im):
 # ignore that...
 # and the functions in that file of write_params_inplace(...) and get_params( ... )
 
+cbasis_mat_1D = torch.Tensor([
+        [1., 1., 1.],
+        [-1., 0., 1.],
+        [1., -2., 1.]
+    ]).T
+cbasis_mat_1D = F.normalize(cbasis_mat_1D, 2, 0)
+
+cbasis_mat_2D = torch.Tensor(9, 9)
+for i, col1 in enumerate(cbasis_mat_1D.T):
+    for j, col2 in enumerate(cbasis_mat_1D.T):
+        cbasis_mat_2D[3*i + j] = torch.outer(col1, col2).flatten()
+
+cbasis_mat_2D = cbasis_mat_2D.T
+cbasis_mat_2D_inv = torch.inverse(cbasis_mat_2D)
+
+class PDEConv2D(nn.Module):
+    """
+    a Conv2D layer that is parameterized by coefficients of second order
+    discretizations of partial differential operators
+    """
+    def __init__(self, channels, bias=True, padding_mode="reflect"):
+        super().__init__()
+        self.padding_mode = padding_mode
+        # currently fixed to 3X3
+        self.weight = nn.parameter.Parameter(
+            torch.Tensor(channels, channels, 3, 3)
+            )
+        self.bias = nn.parameter.Parameter(
+            torch.Tensor(channels)
+        )
+
+        # same initialization used by torch for Conv2D by default
+        nn.init.kaiming_uniform_(self.weight, a=np.sqrt(5))
+        fan_in, _ = nn.init._calculate_fan_in_and_fan_out(self.weight)
+        bound = 1 / np.sqrt(fan_in)
+        nn.init.uniform_(self.bias, -bound, bound)
+
+        # now convert to c parameter space
+        self.weight.data = self.k_to_c(self.weight.data)
+
+    def c_to_k(self, weight):
+        return torch.reshape(torch.tensordot(weight.flatten(-2), cbasis_mat_2D.T, 1), weight.shape)
+
+    def k_to_c(self, weight):
+        return torch.reshape(torch.tensordot(weight.flatten(-2), cbasis_mat_2D_inv.T, 1), weight.shape)
+
+    def reset_weight(self):
+        self.weight.data = self.k_to_c(self.weight.data)
+
+    def scale_tensor(self, x, y, weight):
+        sx = torch.Tensor([1/x**ord for ord in range(3)])
+        sy = torch.Tensor([1/y**ord for ord in range(3)])
+        s = torch.outer(sx, sy)
+        return s * weight
+
+    def forward(self, x: torch.Tensor):
+        mx = 64/(x.size()[-2] + 1)
+        my = 64/(x.size()[-1] + 1)
+        k_weight = self.c_to_k(self.scale_tensor(mx, my, self.weight))
+        if self.padding_mode != "zeros":
+            return F.conv2d(F.pad(x, (1, 1, 1, 1), mode=self.padding_mode), k_weight, self.bias)
+        return F.conv2d(x, k_weight, self.bias, padding=1)
 
 class OpenConvLayer(nn.Module):
     def __init__(self, channels):
@@ -144,7 +207,7 @@ class OpenFlatLayer(nn.Module):
 class CloseLayer(nn.Module):
     def __init__(self, channels):
         super(CloseLayer, self).__init__()
-        self.fc1 = nn.Linear(channels*31*31, 32)
+        self.fc1 = nn.Linear(channels*63*63, 32)
         self.fc2 = nn.Linear(32, 10)
 
     def forward(self, x):
@@ -155,15 +218,25 @@ class CloseLayer(nn.Module):
         return F.log_softmax(x, dim=1)
 # end layer
 
-
 class StepLayer(nn.Module):
-    def __init__(self, channels, init_conv=None):
+    def __init__(self, channels, init_conv=None, activation=None, PDEconv=True):
         super(StepLayer, self).__init__()
+
         ker_width = 3
-        self.conv1 = nn.Conv2d(channels, channels, ker_width,
-                               padding=1, padding_mode="zeros")
-        self.conv2 = nn.Conv2d(channels, channels, ker_width,
-                               padding=1, padding_mode="zeros")
+        if PDEconv:
+            self.conv1 = PDEConv2D(channels, padding_mode="zeros")
+            self.conv2 = PDEConv2D(channels, padding_mode="zeros")
+
+        else:
+            self.conv1 = nn.Conv2d(channels, channels, ker_width,
+                                padding=1, padding_mode="zeros")
+            self.conv2 = nn.Conv2d(channels, channels, ker_width,
+                                padding=1, padding_mode="zeros")
+
+        if activation is not None:
+            self.activation = activation
+        else:
+            self.activation = F.tanh
 
         if init_conv is not None:
             # for now, set the bias to zero
@@ -173,29 +246,32 @@ class StepLayer(nn.Module):
             with torch.no_grad():
                 for i in range(channels):
                     for j in range(channels):
-                        self.conv1.weight[i, j] = init_conv[0]
-                        self.conv2.weight[i, j] = init_conv[1]
+                        if i == j:
+                            self.conv1.weight[i, j] = init_conv[0]
+                            self.conv2.weight[i, j] = init_conv[1]
+                        else:
+                            self.conv1.weight[i, j] = torch.zeros(
+                                (ker_width, ker_width))
+                            self.conv2.weight[i, j] = torch.zeros(
+                                (ker_width, ker_width))
 
+            if PDEconv:
+                self.conv1.reset_weight()
+                self.conv2.reset_weight()
             self.conv1.weight = nn.Parameter(self.conv1.weight)
             self.conv2.weight = nn.Parameter(self.conv2.weight)
 
     def forward(self, x):
         x = self.conv1(x)
-        # x = F.relu(x)
-        # x = F.sigmoid(x)
-        # x = F.tanh(x)
-        # x = self.conv2(x)
-        # x = F.relu(x)
+        x = self.activation(x)
+        x = self.conv2(x)
         return x
 # end layer
 
 
-def plot_image(im, figsize=(14, 14)):
+def plot_image(im, figsize=(8, 8), ind=(0, 0)):
     pyplot.figure(figsize=figsize)
-    pyplot.imshow(im[0, 0, :, :], cmap="coolwarm")
-    lim = torch.max(torch.abs(im[0, 0, :, :]))
-    pyplot.clim((-lim, lim))
-    pyplot.colorbar()
+    pyplot.imshow(im[ind[0], ind[1], :, :], cmap="gray")
     pyplot.show()
 
 
@@ -211,7 +287,7 @@ class SerialNet(nn.Module):
         if serial_nn is None:
             def step_layer(): return StepLayer(channels)
             parallel_nn = torchbraid.LayerParallel(
-                MPI.COMM_SELF, step_layer, local_steps, Tf, max_fwd_levels=1, max_bwd_levels=1, max_iters=1, spatial_ref_pair=None)
+                MPI.COMM_SELF, step_layer, numprocs*local_steps, Tf, max_fwd_levels=1, max_bwd_levels=1, max_iters=1, spatial_ref_pair=None)
             parallel_nn.setPrintLevel(0)
 
             self.serial_nn = parallel_nn.buildSequentialOnRoot()
@@ -232,7 +308,7 @@ class SerialNet(nn.Module):
 
 
 class ParallelNet(nn.Module):
-    def __init__(self, channels=12, local_steps=8, Tf=1.0, max_levels=1, max_iters=1, fwd_max_iters=0, print_level=0, braid_print_level=0, cfactor=4, fine_fcf=False, skip_downcycle=True, fmg=False, sc_levels=None, init_conv=None):
+    def __init__(self, channels=12, local_steps=8, Tf=1.0, max_levels=1, max_iters=1, fwd_max_iters=0, print_level=0, braid_print_level=0, cfactor=4, fine_fcf=False, skip_downcycle=True, fmg=False, sc_levels=None, init_conv=None, activation=None):
         super(ParallelNet, self).__init__()
 
         def sp_coarsen(ten, level):
@@ -256,10 +332,12 @@ class ParallelNet(nn.Module):
             self.levels_to_coarsen = sc_levels
             sp_pair = (sp_coarsen, sp_refine)
 
-        def step_layer(): return StepLayer(channels, init_conv)
+        def step_layer(): return StepLayer(channels, init_conv, activation)
+
+        numprocs = MPI.COMM_WORLD.Get_size()
 
         self.parallel_nn = torchbraid.LayerParallel(
-            MPI.COMM_WORLD, step_layer, local_steps, Tf, max_fwd_levels=max_levels, max_bwd_levels=max_levels, max_iters=max_iters, spatial_ref_pair=sp_pair, sc_levels=sc_levels)
+            MPI.COMM_WORLD, step_layer, local_steps*numprocs, Tf, max_fwd_levels=max_levels, max_bwd_levels=max_levels, max_iters=max_iters, spatial_ref_pair=sp_pair)
         if fwd_max_iters > 0:
             print('fwd_amx_iters', fwd_max_iters)
             self.parallel_nn.setFwdMaxIters(fwd_max_iters)
@@ -270,7 +348,7 @@ class ParallelNet(nn.Module):
 
         if fmg:
             self.parallel_nn.setFMG()
-        self.parallel_nn.setNumRelax(1)         # FCF elsewehre
+        self.parallel_nn.setNumRelax(1)         # FCF elsewhere
         if not fine_fcf:
             # F-Relaxation on the fine grid
             self.parallel_nn.setNumRelax(0, level=0)
@@ -417,23 +495,25 @@ def main():
                         help='how much of the data to read in and use for training/testing')
 
     # architectural settings
-    parser.add_argument('--steps', type=int, default=64, metavar='N',
+    parser.add_argument('--steps', type=int, default=256, metavar='N',
                         help='Number of times steps in the resnet layer (default: 24)')
-    parser.add_argument('--channels', type=int, default=1, metavar='N',
+    parser.add_argument('--channels', type=int, default=4, metavar='N',
                         help='Number of channels in resnet layer (default: 4)')
-    parser.add_argument('--digits', action='store_true', default=True,
+    parser.add_argument('--digits', action='store_true', default=False,
                         help='Train with the MNIST digit recognition problem (default: True)')
     parser.add_argument('--serial-file', type=str, default=None,
                         help='Load the serial problem from file')
-    parser.add_argument('--tf', type=float, default=7.710628e-03,
+    parser.add_argument('--tf', type=float, default=1.0,
                         help='Final time')
-    parser.add_argument('--cfl', type=float, default=0.4, metavar='N',
-                        help="CFL number (assuming the heat kernel)")
+    parser.add_argument('--cfl', type=float, default=0., metavar='N',
+                        help="CFL number (assuming the heat kernel, overrides --tf arg)")
+    parser.add_argument('--activation', type=int, default=2, metavar='N',
+                        help="activation function (0: relu, 1: sigmoid, 2: tanh, 3: leaky relu; default 2")
 
     # algorithmic settings (gradient descent and batching)
-    parser.add_argument('--batch-size', type=int, default=1, metavar='N',
+    parser.add_argument('--batch-size', type=int, default=50, metavar='N',
                         help='input batch size for training (default: 50)')
-    parser.add_argument('--epochs', type=int, default=1, metavar='N',
+    parser.add_argument('--epochs', type=int, default=10, metavar='N',
                         help='number of epochs to train (default: 2)')
     parser.add_argument('--lr', type=float, default=0.01, metavar='LR',
                         help='learning rate (default: 0.01)')
@@ -441,27 +521,27 @@ def main():
     # algorithmic settings (parallel or serial)
     parser.add_argument('--force-lp', action='store_true', default=True,
                         help='Use layer parallel even if there is only 1 MPI rank')
-    parser.add_argument('--lp-levels', type=int, default=2, metavar='N',
+    parser.add_argument('--lp-levels', type=int, default=1, metavar='N',
                         help='Layer parallel levels (default: 4)')
-    parser.add_argument('--lp-iters', type=int, default=100, metavar='N',
+    parser.add_argument('--lp-iters', type=int, default=2, metavar='N',
                         help='Layer parallel iterations (default: 2)')
     parser.add_argument('--lp-fwd-iters', type=int, default=-1, metavar='N',
                         help='Layer parallel (forward) iterations (default: -1, default --lp-iters)')
     parser.add_argument('--lp-print', type=int, default=0, metavar='N',
                         help='Layer parallel internal print level (default: 0)')
-    parser.add_argument('--lp-braid-print', type=int, default=2, metavar='N',
+    parser.add_argument('--lp-braid-print', type=int, default=0, metavar='N',
                         help='Layer parallel braid print level (default: 0)')
     parser.add_argument('--lp-cfactor', type=int, default=4, metavar='N',
-                        help='Layer parallel coarsening factor (default: 2)')
+                        help='Layer parallel coarsening factor (default: 4)')
     parser.add_argument('--lp-finefcf', action='store_true', default=True,
                         help='Layer parallel fine FCF on or off (default: False)')
     parser.add_argument('--lp-use-downcycle', action='store_true', default=False,
                         help='Layer parallel use downcycle on or off (default: False)')
     parser.add_argument('--lp-use-fmg', action='store_true', default=False,
                         help='Layer parallel use FMG for one cycle (default: False)')
-    parser.add_argument('--lp-sc-levels', type=int, nargs='+', default=[0], metavar='N',
+    parser.add_argument('--lp-sc-levels', type=int, nargs='+', default=[-2], metavar='N',
                         help="Layer parallel do spatial coarsening on provided levels (-2: no sc, -1: sc all levels, default: -2)")
-    parser.add_argument('--lp-init-heat', action='store_true', default=True,
+    parser.add_argument('--lp-init-heat', action='store_true', default=False,
                         help="Layer parallel initialize convolutional kernel to the heat equation")
 
     rank = MPI.COMM_WORLD.Get_rank()
@@ -469,20 +549,35 @@ def main():
     args = parser.parse_args()
 
     if args.lp_init_heat:
-        ker1 = torch.tensor([
+        dx = np.pi/32
+        ker1 = 1/(dx**2) * torch.tensor([
             [0., 1.,  0.],
             [1.,  -4., 1.],
             [0., 1.,  0.]
         ])
+        # ker1 = 1/(3*dx**2) * torch.tensor([
+        #     [2., -1.,  2.],
+        #     [-1.,  -4., -1.],
+        #     [2., -1.,  2.]
+        # ])
         ker2 = torch.tensor([
             [0., 0., 0.],
             [0., 1., 0.],
             [0., 0., 0.]
         ])
+        # ker2 = 1/9*torch.tensor([
+        #     [1., 1., 1.],
+        #     [1., 1., 1.],
+        #     [1., 1., 1.]
+        # ])
         init_conv = [ker1, ker2]
-
     else:
         init_conv = None
+
+    funcs = (torch.relu, torch.sigmoid, torch.tanh,
+             nn.LeakyReLU(negative_slope=0.05))
+    func_str = ("relu", "sigmoid", "tanh", "leaky_relu")
+    activation = funcs[args.activation]
 
     # some logic to default to Serial if on one processor,
     # can be overriden by the user to run layer-parallel
@@ -515,8 +610,6 @@ def main():
             args.steps, procs))
         sys.exit(0)
 
-    root_print(rank, 'MNIST ODENet:')
-
     def heat_init(im):
         n, m = im.shape[-2:]
         x = torch.clone(im)
@@ -530,23 +623,42 @@ def main():
 
         return x
 
+    def rand_init(im):
+        return torch.rand(size=im.shape)
+
     def to_double(im):
         return im.double()
+
+    if args.cfl != 0.:
+        nx = 31
+        # assume that the actual grid contains the zeros added
+        # when torch pads before applying convolution
+        dx = pi/(nx + 1)
+        dt = args.cfl*dx**2 / 2
+        T_final = args.steps * dt
+        args.__dict__["tf"] = T_final
+    else:
+        T_final = args.tf
+
+    root_print(rank, 'MNIST ODENet:')
 
     # read in Digits MNIST or Fashion MNIST
     if args.digits:
         root_print(rank, '-- Using Digit MNIST')
-        transform = transforms.Compose([transforms.Pad((2, 2, 1, 1), padding_mode="edge"),
-                                        transforms.ToTensor(),
-                                        transforms.Normalize(
-                                            (0.1307,), (0.3081,)),
-                                        to_double,
-                                        heat_init                  # comment in to initialize all images to the sin-bump
-                                        ])
-        dataset = datasets.MNIST('./data', download=True, transform=transform)
+        transform = transforms.Compose([
+            transforms.Pad((2, 2, 1, 1), padding_mode="edge"),
+            transforms.ToTensor(),
+            my_interp,
+            transforms.Normalize(
+                (0.1307,), (0.3081,))
+            # heat_init                  # comment in to initialize all images to the sin-bump
+            # rand_init                  # comment in to initialize all images to uniform random
+        ])
+        dataset = datasets.MNIST('./data', download=False, transform=transform)
     else:
         root_print(rank, '-- Using Fashion MNIST')
-        transform = transforms.Compose([transforms.ToTensor()])
+        transform = transforms.Compose(
+            [transforms.Pad((2, 2, 1, 1)), transforms.ToTensor(), lambda x : F.interpolate(x.unsqueeze(0), size=(63, 63), mode="bicubic").squeeze(0)])
         dataset = datasets.FashionMNIST(
             './fashion-data', download=True, transform=transform)
     # if args.digits
@@ -556,29 +668,17 @@ def main():
                '-- tf       = {}\n'
                '-- steps    = {}'.format(procs, args.channels, args.tf, args.steps))
 
-    # train_size = int(50000 * args.percent_data)
-    # test_size = int(10000 * args.percent_data)
-    train_size = 1
-    test_size = 1
+    train_size = int(50000 * args.percent_data)
+    test_size = int(10000 * args.percent_data)
     train_set = torch.utils.data.Subset(dataset, range(train_size))
     test_set = torch.utils.data.Subset(
         dataset, range(train_size, train_size+test_size))
     train_loader = torch.utils.data.DataLoader(
-        train_set, batch_size=args.batch_size, shuffle=False)
+        train_set, batch_size=args.batch_size, shuffle=True)
     test_loader = torch.utils.data.DataLoader(
         test_set, batch_size=args.batch_size, shuffle=False)
 
     root_print(rank, '')
-
-    if args.cfl != 0.:
-        nx = 31
-        # nx = sample_im.size[-1]
-        dx = pi/(nx + 1) # assume that the actual grid contains the zeros added
-                         # when torch pads before applying convolution
-        dt = args.cfl*dx**2 / 2
-        T_final = args.steps * dt
-    else:
-        T_final = args.tf
 
     if force_lp:
         root_print(rank, 'Using ParallelNet:')
@@ -589,6 +689,7 @@ def main():
                    '-- fine fcf   = {}\n'
                    '-- skip down  = {}\n'
                    '-- fmg        = {}\n'
+                   '-- activation = {}\n'
                    '-- sc levels  = {}\n'.format(args.lp_levels,
                                                  args.lp_iters,
                                                  args.lp_fwd_iters,
@@ -596,6 +697,7 @@ def main():
                                                  args.lp_finefcf,
                                                  not args.lp_use_downcycle,
                                                  args.lp_use_fmg,
+                                                 func_str[args.activation],
                                                  args.lp_sc_levels))
         model = ParallelNet(channels=args.channels,
                             local_steps=local_steps,
@@ -610,7 +712,8 @@ def main():
                             fmg=args.lp_use_fmg,
                             Tf=T_final,
                             sc_levels=sc_levels,
-                            init_conv=init_conv)
+                            init_conv=init_conv,
+                            activation=activation)
 
         if args.serial_file is not None:
             model.saveSerialNet(args.serial_file)
@@ -635,14 +738,31 @@ def main():
     # if force_lp:
     #diagnose(rank, model, test_loader,0)
 
-    model.double()
+    # model.double()
+
+    # fname = f"examples/mnist/models/{func_str[args.activation]}_net_parallel_nosc"
+    # fname = f"examples/mnist/models/{func_str[args.activation]}_net"
+    fname = f"models/{func_str[args.activation]}_net"
+    # fname = f"examples/mnist/models/{func_str[args.activation]}_net"
+    if args.lp_levels > 1:
+        fname += "_parallel"
+    if -2 not in args.lp_sc_levels:
+        fname += "_sc_full"
+    # fname = f"models/{func_str[args.activation]}_net_parallel"
+    # fname = f"models/{func_str[args.activation]}_net_parallel_sc"
+    # fname = f"examples/mnist/models/{func_str[args.activation]}_net_parallel_sc"
+    # dump command line arguments to json
+    with open(fname + f"_{args.channels}_args.json", 'w') as f:
+        json.dump(args.__dict__, f, indent=2)
 
     for epoch in range(1, args.epochs + 1):
-        # training is turned off to test initialization of layers
         start_time = timer()
         train(rank, args, model, train_loader, optimizer, epoch, compose)
         end_time = timer()
         epoch_times += [end_time-start_time]
+
+        # checkpoint in case something happens
+        torch.save(model.state_dict(), fname + f"{args.channels}.pt")
 
         start_time = timer()
         test(rank, model, test_loader, compose)
@@ -664,5 +784,5 @@ def main():
 
 
 if __name__ == '__main__':
-    torch.set_default_dtype(torch.float64)
+    # torch.set_default_dtype(torch.float64)
     main()

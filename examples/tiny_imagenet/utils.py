@@ -32,6 +32,36 @@ def get_rev():
 # Related to:
 # https://arxiv.org/pdf/2002.09779.pdf
 
+# functions used by spatial coarsening
+def interp_mat(n):
+    out = 2*n - 1
+    mat = torch.zeros((n-1, out))
+
+    stencil = 1/2 * torch.tensor([1., 2., 1.])
+
+    for i in range(n-1):
+        mat[i, 2*i: 2*i + 3] = stencil
+
+    # correct for edges
+    # mat[0, :2] = torch.tensor([1., 0.5])
+    # mat[-1, -2:] = torch.tensor([0.5, 1.])
+
+    return mat.T
+
+
+def my_interp(im):
+    x = torch.clone(im)
+
+    n, m = x.shape[-2:]
+    left = interp_mat(n + 1)
+    right = interp_mat(m + 1).T
+    return torch.matmul(left, torch.matmul(x, right))
+
+
+def my_restrict(im):
+    x = torch.clone(im)
+    return x[..., 1::2, 1::2]
+
 
 ####################################################################################
 ####################################################################################
@@ -209,8 +239,30 @@ class ParallelNet(nn.Module):
   def __init__(self, channels=8, global_steps=8, Tf=1.0, max_fwd_levels=1, max_bwd_levels=1, max_iters=1, max_fwd_iters=0, 
                      print_level=0, braid_print_level=0, fwd_cfactor=4, bwd_cfactor=4, fine_fwd_fcf=False, 
                      fine_bwd_fcf=False, fwd_nrelax=1, bwd_nrelax=1, skip_downcycle=True, fmg=False, fwd_relax_only_cg=0, 
-                     bwd_relax_only_cg=0, CWt=1.0, fwd_finalrelax=False,diff_scale=0.0,activation='tanh'):
+                     bwd_relax_only_cg=0, CWt=1.0, fwd_finalrelax=False,diff_scale=0.0,activation='tanh',sc_levels=(0)):
     super(ParallelNet, self).__init__()
+
+
+    def sp_coarsen(ten, level):
+        if level in self.levels_to_coarsen:
+            restrict = my_restrict(ten)
+            return restrict
+        else:
+            return ten.clone()
+
+    def sp_refine(ten, level):
+        if level in self.levels_to_coarsen:
+            interp = my_interp(ten)
+            return interp
+        else:
+            return ten.clone()
+
+    if sc_levels is None:
+        self.levels_to_coarsen = ()
+        sp_pair = None
+    else:
+        self.levels_to_coarsen = sc_levels
+        sp_pair = (sp_coarsen, sp_refine)
 
     step_layer_1 = lambda: StepLayer(channels,activation)
     step_layer_2 = lambda: StepLayer(2*channels,activation)
@@ -225,7 +277,7 @@ class ParallelNet(nn.Module):
     layers    = [open_layer,    step_layer_1, trans_layer_1,    step_layer_2,  trans_layer_2,step_layer_3, trans_layer_3, step_layer_4]
     num_steps = [         1,  global_steps-1,             1,   global_steps-1, 1,            global_steps-1,           1, global_steps-1]
 
-    self.parallel_nn = torchbraid.LayerParallel(MPI.COMM_WORLD,layers,num_steps,Tf,max_fwd_levels=max_fwd_levels,max_bwd_levels=max_bwd_levels,max_iters=max_iters)
+    self.parallel_nn = torchbraid.LayerParallel(MPI.COMM_WORLD,layers,num_steps,Tf,max_fwd_levels=max_fwd_levels,max_bwd_levels=max_bwd_levels,max_iters=max_iters,spatial_ref_pair=sp_pair)
     if max_fwd_iters>0:
       self.parallel_nn.setFwdMaxIters(max_fwd_iters)
     self.parallel_nn.setPrintLevel(print_level,True)
@@ -380,6 +432,8 @@ def parse_args(mgopt_on=True):
                       help='Layer parallel use relaxation only on coarse grid for forward cycle (default: False)')
   parser.add_argument('--lp-use-crelax-wt', type=float, default=1.0, metavar='CWt',
                       help='Layer parallel use weighted C-relaxation on backwards solve (default: 1.0).  Not used for coarsest braid level.')
+  parser.add_argument('--lp-sc-levels', type=int, nargs='+', default=[-2], metavar='N',
+                      help="Layer parallel do spatial coarsening on provided levels (-2: all levels, -1: None, default: -1)")
 
   if mgopt_on:
     parser.add_argument('--NIepochs', type=int, default=2, metavar='N',

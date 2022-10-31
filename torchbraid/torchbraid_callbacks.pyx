@@ -513,7 +513,7 @@ cdef int my_refine(braid_App app, braid_Vector cu, braid_Vector *fu_ptr, braid_C
   with pyApp.timer("refine"):
     ten_cu =  (<object> cu).tensor()
 
-    braid_CoarsenRefStatusGetNRefine(status,&level)
+    braid_CoarsenRefStatusGetLevel(status,&level)
 
     fu_mem = pyApp.spatial_refine(ten_cu,level)
     fu_vec = BraidVector(fu_mem,level)
