@@ -158,7 +158,8 @@ def main():
         dataset = datasets.MNIST('./data', download=True, transform=transform)
     else:
         root_print(rank, '-- Using Fashion MNIST')
-        transform = transforms.Compose([transforms.ToTensor()])
+        transform = transforms.Compose(
+            [transforms.Pad((2, 2, 1, 1)), transforms.ToTensor(), lambda x : F.interpolate(x.unsqueeze(0), size=(63, 63), mode="bicubic").squeeze(0)])
         dataset = datasets.FashionMNIST(
             './fashion-data', download=True, transform=transform)
 
