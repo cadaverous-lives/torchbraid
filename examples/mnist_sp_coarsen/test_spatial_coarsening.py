@@ -39,9 +39,9 @@ def main():
                         help="use stochastic gradient descent")
     parser.add_argument('--percent-data', type=float, default=.01, metavar='N',
                         help='how much of the data to read in and use for training/testing')
-    parser.add_argument('--batch-size', type=int, default=50, metavar='N',
+    parser.add_argument('--batch-size', type=int, default=500, metavar='N',
                         help='input batch size for training (default: 50)')
-    parser.add_argument('--lp-levels', type=int, default=1, metavar='N',
+    parser.add_argument('--lp-levels', type=int, default=2, metavar='N',
                         help='Layer parallel levels (default: 4)')
     parser.add_argument('--lp-iters', type=int, default=4, metavar='N',
                         help='Layer parallel iterations (default: 2)')
@@ -50,7 +50,7 @@ def main():
     parser.add_argument('--lp-print', type=int, default=0, metavar='N',
                         help='Layer parallel internal print level (default: 0)')
     parser.add_argument('--lp-braid-print', type=int, default=2, metavar='N',
-                        help='Layer parallel braid print level (default: 0)')
+                        help='Layer parallel braid print level (default: 2)')
     parser.add_argument('--lp-cfactor', type=int, default=4, metavar='N',
                         help='Layer parallel coarsening factor (default: 4)')
     parser.add_argument('--lp-finefcf', action='store_true', default=False,
@@ -77,7 +77,6 @@ def main():
     for key in args.__dict__:
         loaded_args[key] = args.__dict__[key]
     args.__dict__ = loaded_args
-    print(args.__dict__)
 
     rank = MPI.COMM_WORLD.Get_rank()
     procs = MPI.COMM_WORLD.Get_size()
@@ -144,6 +143,9 @@ def main():
     def to_double(im):
         return im.double()
 
+    interp_args = {"size": (63, 63), "mode": "bicubic", "align_corners": True}
+    def interp_bicubic(x): return F.interpolate(x.unsqueeze(0), **interp_args).squeeze(0)
+
     # read in Digits MNIST or Fashion MNIST
     if args.digits:
         root_print(rank, '-- Using Digit MNIST')
@@ -151,7 +153,7 @@ def main():
                                         transforms.ToTensor(),
                                         transforms.Normalize(
                                             (0.1307,), (0.3081,)),
-                                        my_interp
+                                        interp_bicubic
                                         # heat_init                  # comment in to initialize all images to the sin-bump
                                         # rand_init                  # comment in to initialize all images to uniform random
                                         ])
@@ -159,7 +161,7 @@ def main():
     else:
         root_print(rank, '-- Using Fashion MNIST')
         transform = transforms.Compose(
-            [transforms.Pad((2, 2, 1, 1)), transforms.ToTensor(), lambda x : F.interpolate(x.unsqueeze(0), size=(63, 63), mode="bicubic").squeeze(0)])
+            [transforms.Pad((2, 2, 1, 1)), transforms.ToTensor(), interp_bicubic])
         dataset = datasets.FashionMNIST(
             './fashion-data', download=True, transform=transform)
 
@@ -169,9 +171,9 @@ def main():
                '-- steps    = {}'.format(procs, args.channels, args.tf, args.steps))
 
     train_size = int(50000 * args.percent_data)
-    test_size = int(10000 * args.percent_data)
+    test_size = args.batch_size
+    # test_size = int(10000 * args.percent_data)
     batch_size = args.batch_size if batched else train_size
-    # test_size = 1
     train_set = torch.utils.data.Subset(dataset, range(train_size))
     test_set = torch.utils.data.Subset(
         dataset, range(train_size, train_size+test_size))
@@ -221,35 +223,41 @@ def main():
     # model.double()
 
     if not args.lp_init_heat:
-        model.load_state_dict(torch.load(fname + f"{args.channels}.pt"))
+        loaded_dict:dict = torch.load(fname + f"{args.channels}.pt")
+        neednt_keys = []
+        # in parallel, each proc only needs part of the saved model
+        [neednt_keys.append(key) for key in loaded_dict if key not in model.state_dict()]
+        [loaded_dict.pop(key, None) for key in neednt_keys]
+        model.load_state_dict(loaded_dict)
 
-    # test(rank, model, test_loader, compose)
+    test(rank, model, test_loader, compose)
 
     def write_grad(f, grad):
         for val in torch.flatten(grad).tolist():
             f.write(f"{val}\n")
 
     # write the gradients to a file
-    sc_label = "_None" if sc_levels is None else ''.join(
-        [f"_{l}" for l in sc_levels])
-    strterm = "_batched_grad.txt" if batched else "_grad.txt"
-    fname = f"experiments/grads/{func_str[args.lp_activation]}_sc{sc_label}_ml_{args.lp_levels}_it_{args.lp_iters}" + strterm
-    model.train()
-    criterion = nn.CrossEntropyLoss()
-    print("Writing grad...")
-    with open(fname, 'w') as f:
-        for i_batch, (data, target) in enumerate(train_loader):
-            output = model(data)
-            loss = compose(criterion, output, target)
-            loss.backward()
-            print(f"batch: {i_batch}")
-            f.write(f"batch: {i_batch}\n")
-            for layer in model.parallel_nn.layer_models:
-                write_grad(f, layer.layer.conv1.weight.grad)
-                write_grad(f, layer.layer.conv1.bias.grad)
-                write_grad(f, layer.layer.conv2.weight.grad)
-                write_grad(f, layer.layer.conv2.bias.grad)
-            f.write('\n')
+    # sc_label = "_None" if sc_levels is None else ''.join(
+    #     [f"_{l}" for l in sc_levels])
+    # strterm = "_batched_grad.txt" if batched else "_grad.txt"
+    # fname = f"experiments/grads/{func_str[args.lp_activation]}_sc{sc_label}_ml_{args.lp_levels}_it_{args.lp_iters}" + strterm
+    # model.train()
+    # criterion = nn.CrossEntropyLoss()
+
+    # print("Writing grad...")
+    # with open(fname, 'w') as f:
+    #     for i_batch, (data, target) in enumerate(train_loader):
+    #         output = model(data)
+    #         loss = compose(criterion, output, target)
+    #         loss.backward()
+    #         print(f"batch: {i_batch}")
+    #         f.write(f"batch: {i_batch}\n")
+    #         for layer in model.parallel_nn.layer_models:
+    #             write_grad(f, layer.layer.conv1.weight.grad)
+    #             write_grad(f, layer.layer.conv1.bias.grad)
+    #             write_grad(f, layer.layer.conv2.weight.grad)
+    #             write_grad(f, layer.layer.conv2.bias.grad)
+    #         f.write('\n')
 
 
 if __name__ == '__main__':

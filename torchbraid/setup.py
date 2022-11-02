@@ -35,6 +35,8 @@ from Cython.Build import cythonize
 import numpy
 import os
 
+os.environ["LDSHARED"] = "mpicc -shared"
+
 braid_dir = os.environ["XBRAID_ROOT"]
 if "EXTRA_FLAGS" in os.environ.keys():
   extra_compile_args = os.environ["EXTRA_FLAGS"]

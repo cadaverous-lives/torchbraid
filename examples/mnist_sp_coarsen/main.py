@@ -54,7 +54,7 @@ from math import pi
 import json
 
 import numpy as np
-import matplotlib.pyplot as pyplot
+# import matplotlib.pyplot as pyplot
 
 from torchvision import datasets, transforms
 from functools import partial
@@ -219,7 +219,7 @@ class CloseLayer(nn.Module):
 # end layer
 
 class StepLayer(nn.Module):
-    def __init__(self, channels, init_conv=None, activation=None, PDEconv=True):
+    def __init__(self, channels, init_conv=None, activation=None, PDEconv=False):
         super(StepLayer, self).__init__()
 
         ker_width = 3
@@ -269,10 +269,10 @@ class StepLayer(nn.Module):
 # end layer
 
 
-def plot_image(im, figsize=(8, 8), ind=(0, 0)):
-    pyplot.figure(figsize=figsize)
-    pyplot.imshow(im[ind[0], ind[1], :, :], cmap="gray")
-    pyplot.show()
+# def plot_image(im, figsize=(8, 8), ind=(0, 0)):
+#     pyplot.figure(figsize=figsize)
+#     pyplot.imshow(im[ind[0], ind[1], :, :], cmap="gray")
+#     pyplot.show()
 
 
 class SerialNet(nn.Module):
@@ -433,20 +433,20 @@ def diagnose(rank, model, test_loader, epoch):
     features = np.array([diagnostic['step_in'][0]]+diagnostic['step_out'])
     params = np.array(diagnostic['params'])
 
-    fig, axs = pyplot.subplots(2, 1)
-    axs[0].plot(range(len(features)), features)
-    axs[0].set_ylabel('Feature Norm')
+    # fig, axs = pyplot.subplots(2, 1)
+    # axs[0].plot(range(len(features)), features)
+    # axs[0].set_ylabel('Feature Norm')
 
-    coords = [0.5+i for i in range(len(features)-1)]
-    axs[1].set_xlim([0, len(features)-1])
-    axs[1].plot(coords, params, '*')
-    axs[1].set_ylabel('Parameter Norms: {}/tstep'.format(params.shape[1]))
-    axs[1].set_xlabel('Time Step')
+    # coords = [0.5+i for i in range(len(features)-1)]
+    # axs[1].set_xlim([0, len(features)-1])
+    # axs[1].plot(coords, params, '*')
+    # axs[1].set_ylabel('Parameter Norms: {}/tstep'.format(params.shape[1]))
+    # axs[1].set_xlabel('Time Step')
 
-    fig.suptitle('Values in Epoch {}'.format(epoch))
+    # fig.suptitle('Values in Epoch {}'.format(epoch))
 
     # pyplot.show()
-    pyplot.savefig('diagnose{:03d}.png'.format(epoch))
+    # pyplot.savefig('diagnose{:03d}.png'.format(epoch))
 
 
 def test(rank, model, test_loader, compose):
@@ -491,7 +491,7 @@ def main():
                         help='random seed (default: 783253419)')
     parser.add_argument('--log-interval', type=int, default=10, metavar='N',
                         help='how many batches to wait before logging training status')
-    parser.add_argument('--percent-data', type=float, default=1.0, metavar='N',
+    parser.add_argument('--percent-data', type=float, default=0.1, metavar='N',
                         help='how much of the data to read in and use for training/testing')
 
     # architectural settings
@@ -513,7 +513,7 @@ def main():
     # algorithmic settings (gradient descent and batching)
     parser.add_argument('--batch-size', type=int, default=50, metavar='N',
                         help='input batch size for training (default: 50)')
-    parser.add_argument('--epochs', type=int, default=10, metavar='N',
+    parser.add_argument('--epochs', type=int, default=2, metavar='N',
                         help='number of epochs to train (default: 2)')
     parser.add_argument('--lr', type=float, default=0.01, metavar='LR',
                         help='learning rate (default: 0.01)')
