@@ -1,0 +1,3 @@
+ 
+Run String Used here is:
+python3 test_spatial_coarsening.py --lp-levels 4 --lp-sc-levels 2

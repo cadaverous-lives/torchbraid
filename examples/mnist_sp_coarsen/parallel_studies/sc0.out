@@ -21,8 +21,8 @@ Test set: Average loss: 0.0012, Accuracy: 406/500 (81%)
 
 
   Braid: Begin simulation, 256 time steps
-  Braid: || r_0 || not available, wall time = 5.12e-01
-  Braid: || r_1 || = 1.346293e+02, conv factor = 1.00e+00, wall time = 4.24e+00
+  Braid: || r_0 || not available, wall time = 6.15e-01
+  Braid: || r_1 || = 1.346293e+02, conv factor = 1.00e+00, wall time = 4.41e+00
   Braid: Max. iterations reached.
 
 
@@ -61,5 +61,5 @@ Test set: Average loss: 0.0012, Accuracy: 406/500 (81%)
       2        16        4        1        1.00
       3         4  
 
-  wall time = 5.526397
+  wall time = 5.687513
 

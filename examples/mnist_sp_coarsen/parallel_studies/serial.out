@@ -12,7 +12,7 @@ Using ParallelNet:
 -- cfactor    = 4
 -- fine fcf   = False
 -- skip down  = True
--- fmg        = False
+-- fmg        = True
 -- activation = tanh
 -- sc levels  = [-2]
 
@@ -38,7 +38,9 @@ Test set: Average loss: 0.0012, Accuracy: 407/500 (81%)
   use relative tol?     = 0
                                           --> 2-norm TemporalNorm 
 
-  use fmg?              = 0
+  use fmg?              = 1
+  V-cycles / FMG level  = 1
+  fmg-cycles for all iteratons
   access_level          = 0
   print_level           = 2
 
@@ -54,5 +56,5 @@ Test set: Average loss: 0.0012, Accuracy: 407/500 (81%)
   level   time-pts   cfactor   nrelax   Crelax Wt
       0       256  
 
-  wall time = 15.003714
+  wall time = 13.854645
 

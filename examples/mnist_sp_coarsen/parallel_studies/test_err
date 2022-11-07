@@ -1,0 +1,2 @@
+cpu-bind=MASK - ruby7, task  0  0 [331709]: mask 0xffffffffffffffffffffffffffff set
+cpu-bind=MASK - ruby7, task  1  1 [331710]: mask 0xffffffffffffffffffffffffffff set

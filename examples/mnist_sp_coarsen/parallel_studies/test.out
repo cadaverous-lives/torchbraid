@@ -1,28 +1,30 @@
 MNIST ODENet:
 -- Using Fashion MNIST
--- procs    = 64
+-- procs    = 2
 -- channels = 4
 -- tf       = 1.0
 -- steps    = 256
 
 Using ParallelNet:
 -- max_levels = 4
--- max_iters  = 2
+-- max_iters  = 4
 -- fwd_iters  = -1
 -- cfactor    = 4
 -- fine fcf   = False
 -- skip down  = True
 -- fmg        = False
 -- activation = tanh
--- sc levels  = [1]
+-- sc levels  = [2]
 
 
-Test set: Average loss: 0.0013, Accuracy: 391/500 (78%)
+Test set: Average loss: 0.0021, Accuracy: 387/500 (77%)
 
 
   Braid: Begin simulation, 256 time steps
-  Braid: || r_0 || not available, wall time = 3.92e-01
-  Braid: || r_1 || = 1.774458e+02, conv factor = 1.00e+00, wall time = 3.66e+00
+  Braid: || r_0 || not available, wall time = 1.16e+01
+  Braid: || r_1 || = 2.798155e+02, conv factor = 1.00e+00, wall time = 3.86e+01
+  Braid: || r_2 || = 8.664058e+02, conv factor = 3.10e+00, wall time = 6.56e+01
+  Braid: || r_3 || = 2.097407e+03, conv factor = 2.42e+00, wall time = 9.20e+01
   Braid: Max. iterations reached.
 
 
@@ -34,10 +36,10 @@ Test set: Average loss: 0.0013, Accuracy: 391/500 (78%)
   use seq soln?         = 0
   storage               = 0
 
-  max iterations        = 2
-  iterations            = 2
+  max iterations        = 4
+  iterations            = 4
 
-  residual norm         = 1.774458e+02
+  residual norm         = 2.097407e+03
   stopping tolerance    = 1.000000e-12
   use relative tol?     = 0
                                           --> 2-norm TemporalNorm 
@@ -61,5 +63,5 @@ Test set: Average loss: 0.0013, Accuracy: 391/500 (78%)
       2        16        4        1        1.00
       3         4  
 
-  wall time = 4.878812
+  wall time = 98.074696
 

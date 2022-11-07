@@ -69,34 +69,13 @@ def root_print(rank, s):
         print(s)
 
 
-def interp_mat(n):
-    out = 2*n - 1
-    mat = torch.zeros((n-1, out))
-
-    stencil = 1/2 * torch.tensor([1., 2., 1.])
-
-    for i in range(n-1):
-        mat[i, 2*i: 2*i + 3] = stencil
-
-    # correct for edges
-    # mat[0, :2] = torch.tensor([1., 0.5])
-    # mat[-1, -2:] = torch.tensor([0.5, 1.])
-
-    return mat.T
-
-
 def my_interp(im):
-    x = torch.clone(im)
-
-    n, m = x.shape[-2:]
-    left = interp_mat(n + 1)
-    right = interp_mat(m + 1).T
-    return torch.matmul(left, torch.matmul(x, right))
+    n, m = im.shape[-2:]
+    return F.interpolate(im, (2*(n+1)-1, 2*(m+1)-1), mode="bilinear", align_corners=False)
 
 
 def my_restrict(im):
-    x = torch.clone(im)
-    return x[..., 1::2, 1::2]
+    return im[..., 1::2, 1::2]
 
 # https://github.com/Multilevel-NN/torchbraid/blob/relax_only_CG/examples/mnist/mgopt.py
 # and the functions def write_params_inplace(model, new_params):
