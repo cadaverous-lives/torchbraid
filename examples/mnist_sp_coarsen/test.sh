@@ -27,8 +27,10 @@ export OMP_NUM_THREADS=3
  
 export PYTHONPATH="$HOME/torchbraid/torchbraid" 
 export PYTHONPATH="$HOME/torchbraid:$PYTHONPATH" 
+
+savedir="parallel_studies"
  
-srun -N 1 -n 2 --cpus-per-task=9 --cpu-bind=verbose --mpibind=off python3 test_spatial_coarsening.py --lp-levels 4 --lp-sc-levels 2
+srun -N 1 -n 2 --cpus-per-task=9 --cpu-bind=verbose --mpibind=off python3 test_spatial_coarsening.py --lp-levels 4 --lp-sc-levels 2 > ${savedir}/test.out
  
 echo " "
 echo Run String Used here is:

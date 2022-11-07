@@ -1,0 +1,58 @@
+MNIST ODENet:
+-- Using Fashion MNIST
+-- procs    = 1
+-- channels = 4
+-- tf       = 1.0
+-- steps    = 256
+
+Using ParallelNet:
+-- max_levels = 1
+-- max_iters  = 2
+-- fwd_iters  = -1
+-- cfactor    = 4
+-- fine fcf   = False
+-- skip down  = True
+-- fmg        = False
+-- activation = tanh
+-- sc levels  = [-2]
+
+
+Test set: Average loss: 0.0012, Accuracy: 407/500 (81%)
+
+
+  Braid: Begin simulation, 256 time steps
+
+  Braid Solver Stats:
+  start time = 0.000000e+00
+  stop time  = 1.000000e+00
+  time steps = 256
+
+  use seq soln?         = 0
+  storage               = 0
+
+  max iterations        = 2
+  iterations            = 0
+
+  residual norm         = -1.000000e+00
+  stopping tolerance    = 1.000000e-12
+  use relative tol?     = 0
+                                          --> 2-norm TemporalNorm 
+
+  use fmg?              = 0
+  access_level          = 0
+  print_level           = 2
+
+  max number of levels  = 1
+  min coarse            = 2
+  number of levels      = 1
+  skip down cycle       = 1
+  periodic              = 0
+  relax_only_cg         = 0
+  finalFCRelax          = 1
+  number of refinements = 0
+
+  level   time-pts   cfactor   nrelax   Crelax Wt
+      0       256  
+
+  wall time = 15.003714
+

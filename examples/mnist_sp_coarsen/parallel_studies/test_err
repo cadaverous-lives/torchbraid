@@ -1,6 +1,0 @@
-cpu-bind=MASK - ruby7, task  0  0 [20048]: mask 0xffffffffffffffffffffffffffff set
-cpu-bind=MASK - ruby7, task  1  1 [20049]: mask 0xffffffffffffffffffffffffffff set
-cpu-bind=MASK - ruby24, task  0  0 [244282]: mask 0xffffffffffffffffffffffffffff set
-cpu-bind=MASK - ruby24, task  1  1 [244283]: mask 0xffffffffffffffffffffffffffff set
-cpu-bind=MASK - ruby1, task  0  0 [17649]: mask 0xffffffffffffffffffffffffffff set
-cpu-bind=MASK - ruby1, task  1  1 [17650]: mask 0xffffffffffffffffffffffffffff set
