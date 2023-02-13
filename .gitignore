@@ -3,8 +3,10 @@ braid.out.cycle
 
 .vscode
 
+.ipynb_checkpoints/
 __pycache__/
 examples/mnist/data/
+examples/mnist/digit-data/
 examples/mnist/fashion-data/
 examples/mnist_sp_coarsen/data/
 examples/mnist_sp_coarsen/fashion-data/
@@ -13,8 +15,15 @@ examples/mnist_sp_coarsen/models
 
 makefile.inc
 
+# Jetbrains
+.idea/
+
+# Unit test
+.tox/
+
 .DS_Store
 .vscode
+.
 
 tests/build/
 tests/torchbraid_test.c
@@ -23,19 +32,27 @@ tests/torchbraid_test.html
 tests/test_cbs.c
 tests/test_cbs.*.so
 tests/test_cbs.html
-torchbraid/braid.html
-torchbraid/build/
-torchbraid/torchbraid_app.c
-torchbraid/torchbraid_app.*.so
-torchbraid/torchbraid_app.html
-torchbraid/torchbraid_callbacks.html
-torchbraid/rnn_braid_app.c
-torchbraid/rnn_braid_app.*.so
-torchbraid/rnn_braid_app.html
+src/torchbraid.egg-info/
+src/torchbraid/braid.html
+src/torchbraid/build/
+src/torchbraid/test_fixtures/build/
+src/torchbraid/test_fixtures/test_cbs.html
+src/torchbraid/torchbraid_app.c
+src/torchbraid/torchbraid_app.*.so
+src/torchbraid/torchbraid_app.html
+src/torchbraid/torchbraid_callbacks.html
+src/torchbraid/rnn_braid_app.c
+src/torchbraid/rnn_braid_app.*.so
+src/torchbraid/rnn_braid_app.html
+src/torchbraid/test_fixtures/*.so
+src/torchbraid/test_fixtures/test_cbs.c
+src/xbraid
+drivers/mnist/fashion-data
+drivers/mnist/data
 
 examples/tiny_imagenet/tiny-imagenet-200
-
-examples/rnns/uci-har/UCI\ HAR\ Dataset/
-examples/rnns/uci-har/UCI\ HAR\ Dataset.zip
-examples/rnns/uci-har/__MACOSX
-
+examples/mnist/mnist_layerparallel_training.png
+examples/mnist/mnist_layerparallel_dataparallel_training_*.png
+examples/UCI_HAR_Recurrent/UCI\ HAR\ Dataset/
+examples/UCI_HAR_Recurrent/UCI-HAR_layerparallel_training.png
+Overleaf
